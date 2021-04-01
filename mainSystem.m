@@ -127,7 +127,7 @@ while (1)
     
     % OFDM
     t1 = tx_data_buff;
-    tx_data_buff = fftshift(tx_data_buff);
+    tx_data_buff = circshift(tx_data_buff, N/2);
     tx_data_buff = ifft(tx_data_buff, N);
     tx_data_buff = [tx_data_buff(end-CP+1: end, :); tx_data_buff];
     
@@ -152,30 +152,29 @@ while (1)
         n = 0; %(1/sqrt(2*10*N)) * (randn(size(tx_data_buff)) + 1i * randn(size(tx_data_buff)));
         rx_data = h .* tx_data + n;    end
     
-    % Primary Sync
+%     % Primary Sync
     
     rx_prm_corr = abs(xcorr(prmSeq, rx_data));
     [~, max_idx] = max(rx_prm_corr);
-    
+    plot(rx_prm_corr);
     max_idx = max_idx - length(tx_data) + 1;
     
     % CFO Estimation and Equalization
     
     rx_data = rx_data(max_idx + length(prmSeq): end);
     
-    rx_data_buff = zeros(N + CP, numSyms - 1);
+    rx_data_buff = zeros(N, numSyms - 1);
     
     % Framing
     
     for iter_syms = 1: (numSyms - 1)
-        rx_data_buff(:, iter_syms) = rx_data((iter_syms - 1) * (N + CP) + 1: iter_syms * (N + CP));
+        rx_data_buff(:, iter_syms) = rx_data((iter_syms - 1) * (N + CP) + CP + 1: iter_syms * (N + CP), 1);
     end
     
     % OFDM Demodulation
     
-    rx_data_buff = rx_data_buff(CP+1: end, :);
     rx_data_buff = fft(rx_data_buff, N);
-    rx_data_buff = fftshift(rx_data_buff);
+    rx_data_buff = circshift(rx_data_buff, N/2);
     
     % Channel Estimation and Equalization
     
@@ -188,7 +187,7 @@ while (1)
     
     % QAM Demodulation
     
-    demodData = qamdemod(data_syms, modOrder, 'gray', 'OutputType', 'bit', 'UnitAveragePower', 1);
+    demodData = qamdemod(data_syms, modOrder, 'gray', 'OutputType', 'approxllr', 'UnitAveragePower', 1);
 
     % Channel Decoding
     
@@ -196,11 +195,11 @@ while (1)
     
     for iter_pc = 1: floor(numBits/100)
         decodedBits_tmp = nrRateRecoverPolar(demodData((iter_pc - 1) * 200 + 1: iter_pc * 200, 1), 100, 256);
-        decodeBits((iter_pc - 1) * 100 + 1: iter_pc * 100, 1) = nrPolarDecode(decodedBits_tmp, 100, (1/codeRate)*100, 8);
+        decodedBits((iter_pc - 1) * 100 + 1: iter_pc * 100, 1) = nrPolarDecode(decodedBits_tmp, 100, (1/codeRate)*100, 8);
     end
     
     decodedBits_tmp = nrRateRecoverPolar(demodData(iter_pc * 200 + 1: iter_pc * 200 + 152, 1), 76, 256);
-    decodeBits(iter_pc * 100 + 1: iter_pc * 100 + 76, 1) = nrPolarDecode(decodedBits_tmp, 76, (1/codeRate)*76, 8);
+    decodedBits(iter_pc * 100 + 1: iter_pc * 100 + 76, 1) = nrPolarDecode(decodedBits_tmp, 76, (1/codeRate)*76, 8);
         
     
     %% Evaluation 
