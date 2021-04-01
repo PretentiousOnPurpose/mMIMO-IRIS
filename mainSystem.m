@@ -4,7 +4,7 @@
 %	Author(s): Yashwanth R - yashwanthr@iisc.ac.in
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
+clc;
 clear
 close all;
 
@@ -15,53 +15,45 @@ if ~isloaded
 end
 
 % Params:
-N_BS_NODE               = 1;
-N_UE                    = 1;
-WRITE_PNG_FILES         = 1;           % Enable writing plots to PNG
 SIM_MOD                 = 1;
-% DEBUG                   = 1;
-PLOT                    = 1;
 
 keepTXRX_Running = 0;
 
-if SIM_MOD
-    chan_type               = "rayleigh"; % Will use only Rayleigh for simulation
-    sim_SNR_db              = 15;
-    TX_SCALE                = 1;         % Scale for Tx waveform ([0:1])
-    bs_ids                  = ones(1, N_BS_NODE);
-    ue_ids                  = ones(1, N_UE);
-
-else 
-    %Iris params:
-    TX_SCALE                = 1;         % Scale for Tx waveform ([0:1])
-    chan_type               = "iris";
-    USE_HUB                 = 0;
-    TX_FRQ                  = 2.5e9;
-    RX_FRQ                  = TX_FRQ;
-    TX_GN                   = 42;
-    TX_GN_ue                = 42;
-    RX_GN                   = 42;
-    SMPL_RT                 = 5e6;
-    N_FRM                   = 10;
-    bs_ids                   = string.empty();
-    ue_ids                  = string.empty();
-    ue_scheds               = string.empty();
-    
-    bs_ids = ["RF3E000064", "RF3E000037", "RF3E000012"];
-    numBSAnts = 16;
-
-    ue_ids= ["RF3E000044"];
-    numUEAnts = 16;
-
-    N_BS_NODE               = length(bs_ids);           % Number of nodes/antennas at the BS
-    N_UE                    = length(ue_ids);           % Number of UE nodes
-
-    numAntsPerBSNode = numBSAnts / N_BS_NODE;
-    numAntsPerUENode = numUEAnts / N_UE;
-
-end
 fprintf("5G Testbed@ IISc: IRIS MIMO Setup\n");
-fprintf("Transmission type: %s \n",chan_type);
+% fprintf("Transmission type: %s \n",chan_type);
+fprintf("\n-------IRIS SDR 030 ----------\n");
+
+%Iris params:
+TX_SCALE                = 1;         % Scale for Tx waveform ([0:1])
+chan_type               = "iris";
+USE_HUB                 = 0;
+TX_FRQ                  = 2.5e9;
+RX_FRQ                  = TX_FRQ;
+TX_GN                   = 42;
+TX_GN_ue                = 42;
+RX_GN                   = 42;
+SMPL_RT                 = 5e6;
+N_FRM                   = 10;
+bs_ids                   = string.empty();
+ue_ids                  = string.empty();
+ue_scheds               = string.empty();
+
+bs_ids = ["RF3E000064", "RF3E000037", "RF3E000012"];
+numBSAnts = 16;
+
+ue_ids= ["RF3E000044"];
+numUEAnts = 16;
+
+N_BS_NODE               = length(bs_ids);           % Number of nodes/antennas at the BS
+N_UE                    = length(ue_ids);           % Number of UE nodes
+
+numAntsPerBSNode = ceil(numBSAnts / N_BS_NODE);
+numAntsPerUENode = ceil(numUEAnts / N_UE);
+
+fprintf("Num of nodes per BS Nodes: %u\n", N_BS_NODE);
+fprintf("Num of nodes per UE: %u\n", N_UE);
+fprintf("Num of Antennas per BS Node: %u\n", numAntsPerBSNode);
+fprintf("Num of Antennas per UE Node: %u\n", numAntsPerUENode);
 
 while (1)
     
@@ -135,28 +127,83 @@ while (1)
     
     %% Burn Data onto IRIS BS Nodes
     if (SIM_MOD == 0)
-        BS_PARAMS = 0;
+
+        bs_sched = ["BGGGGGRG"];           % BS schedule
+        ue_sched = ["GGGGGGPG"];           % UE schedule        
         
+        % Iris nodes' parameters
+        bs_sdr_params = struct(...
+            'id', bs_ids, ...
+            'n_sdrs', N_BS_NODE, ...        % number of nodes chained together
+            'txfreq', TX_FRQ, ...   
+            'rxfreq', RX_FRQ, ...
+            'txgain', TX_GN, ...
+            'rxgain', RX_GN, ...
+            'sample_rate', SMPL_RT, ...
+            'n_samp', n_samp, ...          % number of samples per frame time.
+            'n_frame', N_FRM, ...
+            'tdd_sched', bs_sched, ...     % number of zero-paddes samples
+            'n_zpad_samp', N_ZPAD_PRE ...
+            );
+
+        ue_sdr_params = bs_sdr_params;
+        ue_sdr_params.id =  ue_ids;
+        ue_sdr_params.n_sdrs = N_UE;
+        ue_sdr_params.txgain = TX_GN_ue;
+
+        ue_sdr_params.tdd_sched = ue_sched;
+        
+        n_samp = bs_param.n_samp;
+        if ~isempty(hub_id)
+            node_bs = iris_py(bs_param,hub_id);
+        else
+            node_bs = iris_py(bs_param,[]);        % initialize BS
+        end
+        node_ue = iris_py(ue_param,[]);    % initialize UE
+
+        node_ue.sdr_configgainctrl();
+
+        node_bs.sdrsync();                 % synchronize delays only for BS
+
+        node_ue.sdrrxsetup();             % set up reading stream
+        node_bs.sdrrxsetup();
+
+        tdd_sched_index = 1; % for uplink only one frame schedule is sufficient
+        node_bs.set_tddconfig(1, bs_param.tdd_sched(tdd_sched_index)); % configure the BS: schedule etc.
+        node_ue.set_tddconfig(0, ue_param.tdd_sched(tdd_sched_index));
+
+        node_bs.sdr_setupbeacon();   % Burn beacon to the BS(1) RAM
+
+        for i=1:N_BS_NODE
+            node_bs.sdrtx_single(tx_data, i, numAntsPerBSNode);       % Burn data to the UE RAM
+        end
+        node_ue.sdr_activate_rx();          % activate reading stream
+
+        node_ue.sdr_setcorr()              % activate correlator
+        node_bs.sdrtrigger(trig);           % set trigger to start the frame  
+
+        %% Retreive Data from IRIS UE Antenna Buffers.
+       
+        % Iris Rx 
+
+        [rx_data, data0_len] = node_ue.sdrrx(n_samp); % read data
+
+        node_bs.sdr_close();                % close streams and exit gracefully.
+        node_ue.sdr_close();
+        fprintf('Length of the received vector from HW: \tUE:%d\n', data0_len);
         
     end    
-    %% Retreive Data from IRIS UE Antenna Buffers.
-    if (SIM_MOD == 0)
-        
-        
-        
-    end           
     %% Downlink Baseband Signal Processing at IRIS UE Nodes
 
     if (SIM_MOD == 1)
         h = 1; %(1/sqrt(2)) * (randn(1, 1) + 1i * randn(1, 1));
         n = 0; %(1/sqrt(2*10*N)) * (randn(size(tx_data_buff)) + 1i * randn(size(tx_data_buff)));
-        rx_data = h .* tx_data + n;    end
+        rx_data = h .* tx_data + n;    
+    end
     
-%     % Primary Sync
-    
+    % Primary Sync.
     rx_prm_corr = abs(xcorr(prmSeq, rx_data));
     [~, max_idx] = max(rx_prm_corr);
-    plot(rx_prm_corr);
     max_idx = max_idx - length(tx_data) + 1;
     
     % CFO Estimation and Equalization
