@@ -66,7 +66,8 @@ while (1)
     N = 256;
     CP = N/4;
     
-    prmSeq = [zadoffChuSeq(3, N+CP-1); 0];
+    prmSeq = [zadoffChuSeq(5, (N+CP)-1); 0];
+%     prmSeq = [prmSeq; prmSeq];
     
     codeRate = 1/2;
     modOrder = 4;
@@ -196,17 +197,45 @@ while (1)
     %% Downlink Baseband Signal Processing at IRIS UE Nodes
 
     if (SIM_MOD == 1)
-        h = 1; %(1/sqrt(2)) * (randn(1, 1) + 1i * randn(1, 1));
-        n = 0; %(1/sqrt(2*10*N)) * (randn(size(tx_data_buff)) + 1i * randn(size(tx_data_buff)));
-        rx_data = h .* tx_data + n;    
+        delF = 0.12;
+        h = (1/sqrt(2)) * (randn(1, 1) + 1i * randn(1, 1));
+        n = (1/sqrt(2*3.16*N)) * (randn(size(tx_data)) + 1i * randn(size(tx_data)));
+        cfo_phase = exp(1i * 2 * pi * (delF) * (0:length(tx_data)-1)' ./ N);
+        rx_data = h .* cfo_phase .* tx_data + n;    
     end
     
     % Primary Sync.
-    rx_prm_corr = abs(xcorr(prmSeq, rx_data));
+    rx_prm_corr = abs(xcorr(rx_data, prmSeq));
+    
+    % Partial Sum Cross Correlation
+    
+%     rx_prm_corr = zeros(length(rx_data), 1);
+%     
+%     for iter_samps = 1: length(rx_data)-(N+CP)
+%         idx = iter_samps; %((iter_samps - 1) * (N + CP) + 1);
+%         corr_sum = 0;
+%         corr_sum = corr_sum + sum(abs(rx_data(idx, 1) .* conj(prmSeq(1:64))));
+%         corr_sum = corr_sum + sum(abs(rx_data(64 + idx, 1) .* conj(prmSeq(65:128))));
+%         corr_sum = corr_sum + sum(abs(rx_data(2 * 64 + idx, 1) .* conj(prmSeq(129:192))));
+%         corr_sum = corr_sum + sum(abs(rx_data(3 * 64 + idx, 1) .* conj(prmSeq(193:256))));
+%         corr_sum = corr_sum + sum(abs(rx_data(4 * 64 + idx, 1) .* conj(prmSeq(257:320))));
+%         
+%         rx_prm_corr(iter_samps, 1) = corr_sum;
+%     end
+
     [~, max_idx] = max(rx_prm_corr);
-    max_idx = max_idx - length(tx_data) + 1;
+    plot(rx_prm_corr);
+    max_idx = mod(max_idx, length(tx_data)) + 1;
     
     % CFO Estimation and Equalization
+    rx_prmSeq = rx_data(max_idx: max_idx + N + CP, 1);
+    
+    corrSeq = (rx_prmSeq(161:320) .* conj(prmSeq(161:320))) .* conj((rx_prmSeq(1:160) .* conj(prmSeq(1:160))));
+    ffo_est = mean(angle(corrSeq)) * (256) / (2 * pi * 159);
+    
+    rx_data = exp(-1i * 2 * pi * ffo_est * (0:length(rx_data)-1)' ./ N) .* rx_data;
+    
+    % Realign with Frame Boundary
     
     rx_data = rx_data(max_idx + length(prmSeq): end);
     
@@ -225,7 +254,6 @@ while (1)
     
     % Channel Estimation and Equalization
     
-    % Phase Error Estimation and Equalization
     
     % Equalized Data Extraction
     
