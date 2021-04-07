@@ -8,6 +8,8 @@ clc;
 clear
 close all;
 
+rng(108);
+
 [version, executable, isloaded] = pyversion;
 if ~isloaded
     pyversion /usr/bin/python3
@@ -17,7 +19,7 @@ end
 % Params:
 SIM_MOD                 = 1;
 
-keepTXRX_Running = 0;
+keepTXRX_Running = 1;
 
 fprintf("5G Testbed@ IISc: IRIS MIMO Setup\n");
 % fprintf("Transmission type: %s \n",chan_type);
@@ -101,7 +103,7 @@ while (1)
         delF = 0.0;
 %         h = [[1,0];[0,1]];
         h = (1/sqrt(2)) * (randn(2, 2) + 1i * randn(2, 2));
-        n = 0 * (1/sqrt(2*1*N)) * (randn(size(ul_tx_data)) + 1i * randn(size(ul_tx_data)));
+        n = (1/sqrt(2*3.16*N)) * (randn(size(ul_tx_data)) + 1i * randn(size(ul_tx_data)));
         cfo_phase = exp(1i * 2 * pi * (delF) * (0:length(ul_tx_data)-1)' ./ N);
         ul_rx_data = h  * ul_tx_data + n;    
     end
@@ -263,7 +265,7 @@ while (1)
     if (SIM_MOD == 1)
         delF = 0.0;
 %         h = (1/sqrt(2)) * (randn(1, 1) + 1i * randn(1, 1));
-        n = 0 * (1/sqrt(2*1*N)) * (randn(size(dl_tx_data)) + 1i * randn(size(dl_tx_data)));
+        n = (1/sqrt(2*3.16*N)) * (randn(size(dl_tx_data)) + 1i * randn(size(dl_tx_data)));
         cfo_phase = exp(1i * 2 * pi * (delF) * (0:length(dl_tx_data)-1)' ./ N);
         dl_rx_data = h * dl_tx_data + n;    
     end
@@ -349,7 +351,7 @@ while (1)
     if (sum(bitxor(dataBits, decodedBits)) == 0)
         fprintf("Successful Transmission\n");
     else
-        fprintf("Failed Reception\n");
+        fprintf("Failed Reception: %u\n", sum(bitxor(dataBits, decodedBits)));
     end
     
     if (keepTXRX_Running == 0)
