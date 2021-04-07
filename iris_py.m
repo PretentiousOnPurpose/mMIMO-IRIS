@@ -70,7 +70,7 @@ classdef iris_py < handle
                         'sample_rate',obj.sample_rate, 'n_samp', obj.n_samp) );
                     
                     obj.py_obj_array(ipy,:) = {py_obj};
-                end                
+                end
             end
         end
 
@@ -150,20 +150,22 @@ classdef iris_py < handle
          end
         
         %Assume same data is Tx-ed from all memebers of the array
-        function sdrtx(obj, data)
+        function sdrtx(obj, tx_data)
+            data = [tx_data(1, :), tx_data(2, :)];
             for ipy = 1:obj.n_sdrs
                 obj.py_obj_array{ipy}.burn_data( pyargs('data_r', real(data), 'data_i', imag(data)) );
             end
         end
 
-        function sdrtx_single(obj, data, index)
-            obj.py_obj_array{index}.burn_data( pyargs('data_r1', real(data(:, 1)), 'data_i1', imag(data(:, 1)), 'data_r2', real(data(:, 2)), 'data_i2', imag(data(:, 2)), 'chan', 2) );
+        function sdrtx_single(obj, tx_data, index)
+            data = [tx_data(1, :), tx_data(2, :)];
+            obj.py_obj_array{index}.burn_data( pyargs('data_r', real(data), 'data_i', imag(data)) );
         end
         
         % Read n_frame x n_samp data
         function [data, len] = sdrrx(obj, n_samp)
-            data_raw = zeros(2, obj.n_frame * n_samp);  % Change this to max frame!
-            
+            data_raw = zeros(obj.n_sdrs, obj.n_frame * n_samp);  % Change this to max frame!
+            data  = zeros(2, n_samp);
             for jf=1:obj.n_frame
                 %trigger base station
                 if obj.is_bs
@@ -177,18 +179,14 @@ classdef iris_py < handle
                 
                 for ipy = 1:obj.n_sdrs
                     rcv_data = obj.py_obj_array{ipy}.recv_stream_tdd();
-
-                    tmpData = double( py.array.array( 'd',py.numpy.nditer( py.numpy.real(rcv_data) ) ) ) + ...
+                    data_raw = double( py.array.array( 'd',py.numpy.nditer( py.numpy.real(rcv_data) ) ) ) + ...
                         1i*double( py.array.array( 'd',py.numpy.nditer( py.numpy.imag(rcv_data) ) ) );
-                    
-                    for n_ant = 1:2
-                        data_raw(n_ant, (jf-1)*n_samp + 1: jf*n_samp) = tmpData((n_ant - 1) * (n_samp) + 1: n_ant * n_samp);
-                    end
+                    data(1, :) = data_raw(1:length(data_raw)/2);
+                    data(2, :) = data_raw(length(data_raw)/2+1:end);
                 end
             end
-            data(1, :) = obj.get_best_frame(data_raw(1, :).', n_samp);
-            data(2, :) = obj.get_best_frame(data_raw(2, :).', n_samp);
-            len = size(data, 2);
+%             data = obj.get_best_frame(data_raw.', n_samp);
+            len = length(data);
         end
         
         
@@ -200,9 +198,6 @@ classdef iris_py < handle
         end
         
         function [data] = get_best_frame(obj, data_frame, n_samp)
-            
-            tmpDataFrame = data_frame; %
-            data_frame = sum(data_frame, 2);
             % FD LTS
             lts_f = [0 1 -1 -1 1 1 -1 1 -1 1 -1 -1 -1 -1 -1 1 1 -1 ...
                 -1 1 -1 1 -1 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0 1 1 -1 -1 ...
@@ -253,7 +248,6 @@ classdef iris_py < handle
     
             % Return the frame with the highest value 
             data = data_split(:,:,m_idx).';
-%             data = tmpDataFrame((m_idx - 1) * n_samp + 1: m_idx * n_samp, :);
             fprintf('Returning frame number %d with max mean correlation = %f \n',m_idx,max_corr);
         end
         

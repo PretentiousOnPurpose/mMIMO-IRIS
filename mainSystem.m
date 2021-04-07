@@ -128,71 +128,8 @@ while (1)
     
     %% Burn Data onto IRIS BS Nodes
     if (SIM_MOD == 0)
+ 
 
-        bs_sched = ["BGGGGGRG"];           % BS schedule
-        ue_sched = ["GGGGGGPG"];           % UE schedule        
-        
-        % Iris nodes' parameters
-        bs_sdr_params = struct(...
-            'id', bs_ids, ...
-            'n_sdrs', N_BS_NODE, ...        % number of nodes chained together
-            'txfreq', TX_FRQ, ...   
-            'rxfreq', RX_FRQ, ...
-            'txgain', TX_GN, ...
-            'rxgain', RX_GN, ...
-            'sample_rate', SMPL_RT, ...
-            'n_samp', n_samp, ...          % number of samples per frame time.
-            'n_frame', N_FRM, ...
-            'tdd_sched', bs_sched, ...     % number of zero-paddes samples
-            'n_zpad_samp', N_ZPAD_PRE ...
-            );
-
-        ue_sdr_params = bs_sdr_params;
-        ue_sdr_params.id =  ue_ids;
-        ue_sdr_params.n_sdrs = N_UE;
-        ue_sdr_params.txgain = TX_GN_ue;
-
-        ue_sdr_params.tdd_sched = ue_sched;
-        
-        n_samp = bs_param.n_samp;
-        if ~isempty(hub_id)
-            node_bs = iris_py(bs_param,hub_id);
-        else
-            node_bs = iris_py(bs_param,[]);        % initialize BS
-        end
-        node_ue = iris_py(ue_param,[]);    % initialize UE
-
-        node_ue.sdr_configgainctrl();
-
-        node_bs.sdrsync();                 % synchronize delays only for BS
-
-        node_ue.sdrrxsetup();             % set up reading stream
-        node_bs.sdrrxsetup();
-
-        tdd_sched_index = 1; % for uplink only one frame schedule is sufficient
-        node_bs.set_tddconfig(1, bs_param.tdd_sched(tdd_sched_index)); % configure the BS: schedule etc.
-        node_ue.set_tddconfig(0, ue_param.tdd_sched(tdd_sched_index));
-
-        node_bs.sdr_setupbeacon();   % Burn beacon to the BS(1) RAM
-
-        for i=1:N_BS_NODE
-            node_bs.sdrtx_single(tx_data, i, numAntsPerBSNode);       % Burn data to the UE RAM
-        end
-        node_ue.sdr_activate_rx();          % activate reading stream
-
-        node_ue.sdr_setcorr()              % activate correlator
-        node_bs.sdrtrigger(trig);           % set trigger to start the frame  
-
-        %% Retreive Data from IRIS UE Antenna Buffers.
-       
-        % Iris Rx 
-
-        [rx_data, data0_len] = node_ue.sdrrx(n_samp); % read data
-
-        node_bs.sdr_close();                % close streams and exit gracefully.
-        node_ue.sdr_close();
-        fprintf('Length of the received vector from HW: \tUE:%d\n', data0_len);
-        
     end    
     %% Downlink Baseband Signal Processing at IRIS UE Nodes
 

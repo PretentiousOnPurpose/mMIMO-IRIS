@@ -110,7 +110,7 @@ class Iris_py:
                 self.max_frames = 1
 
                 ### Setup channel rates, ports, gains, and filters ###
-                # info = self.sdr.getHardwareInfo()
+                info = self.sdr.getHardwareInfo()
                 for chan in [0, 1]:
 
                         #Tx:
@@ -127,7 +127,7 @@ class Iris_py:
                                 self.sdr.setFrequency(SOAPY_SDR_TX, chan, 'BB', .75*sample_rate)
 
                         #print("Set TX frequency to %f" % self.sdr.getFrequency(SOAPY_SDR_TX, chan))
-                        self.sdr.setAntenna(SOAPY_SDR_TX, chan, "TRX")
+                        #self.sdr.setAntenna(SOAPY_SDR_TX, chan, "TRX")
 
                         #Rx:
                         if sample_rate is not None:
@@ -247,19 +247,24 @@ class Iris_py:
                 self.sdr.writeSetting("BEACON_START", str(2))
 
         # Write data to FPGA RAM
-        def burn_data(self, data_r1, data_i1=None,data_r2, data_i2=None, chan, replay_addr=0):
+        def burn_data(self, data_r, data_i=None, replay_addr=0):
                 '''Write data to FPGA RAM. A pilot for example. Need to compose a complex vector out of data_r and data_i'''
 
                 if data_i is not None:
                     # hack for matlab...
-                    data = np.asarray(data_r1, dtype=np.complex64) + 1.j * \
-                        np.asarray(data_i1, dtype=np.complex64)
+                    data = np.asarray(data_r, dtype=np.complex64) + 1.j * \
+                        np.asarray(data_i, dtype=np.complex64)
+                
+                print("TX DATA SHAPE: {}".format(data.shape))
+                data1 = data[:3480]
+                data2 = data[3480:]
 
-                buf_a = cfloat2uint32(data, order='QI')
+                buf_a = cfloat2uint32(data1, order='QI')
+                buf_b = cfloat2uint32(data2, order='QI')
                 print("burnt data on to node {} FPGA RAM".format(self.serial_id))
 
                 self.sdr.writeRegisters("TX_RAM_A", replay_addr, buf_a.tolist())
-                #self.sdr.writeRegisters("TX_RAM_B", replay_addr, buf_b.tolist() )
+                self.sdr.writeRegisters("TX_RAM_B", replay_addr, buf_b.tolist() )
 
         def recv_stream_tdd(self):
                 '''Read an incoming stream.'''

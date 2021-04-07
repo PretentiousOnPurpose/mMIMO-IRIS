@@ -9,15 +9,18 @@ clear
 close all;
 
 rng(108);
+% 
 
 [version, executable, isloaded] = pyversion;
-if ~isloaded
-    pyversion /usr/bin/python3
-    py.print() %weird bug where py isn't loaded in an external script
-end
+% py.importlib.import_module('iris_py')
+
+% pyversion /usr/bin/python3
+% if ~isloaded
+%     py.print() %weird bug where py isn't loaded in an external script
+% end
 
 % Params:
-SIM_MOD                 = 1;
+SIM_MOD                 = 0;
 
 keepTXRX_Running = 1;
 
@@ -33,9 +36,9 @@ TX_FRQ                  = 3.5e9;
 RX_FRQ                  = TX_FRQ;
 TX_GN                   = 42;
 TX_GN_ue                = 42;
-RX_GN                   = 42;
+RX_GN                   = 20;
 SMPL_RT                 = 5e6;
-N_FRM                   = 10;
+N_FRM                   = 1;
 bs_ids                   = string.empty();
 ue_ids                  = string.empty();
 ue_scheds               = string.empty();
@@ -51,6 +54,8 @@ N_UE                    = length(ue_ids);           % Number of UE nodes
 
 numAntsPerBSNode = ceil(numBSAnts / N_BS_NODE);
 numAntsPerUENode = ceil(numUEAnts / N_UE);
+
+n_samp = 3840;
 
 fprintf("Num of nodes per BS Nodes: %u\n", N_BS_NODE);
 fprintf("Num of nodes per UE: %u\n", N_UE);
@@ -68,7 +73,10 @@ while (1)
     CP = N/4;
     
     prmSeq = [zadoffChuSeq(5, (N+CP)-1); 0];
-%     prmSeq = [prmSeq; prmSeq];
+    prmSeq = nrPSS(0);
+    prmSeq = ifft(prmSeq, 128);
+    prmSeq = [prmSeq(end-CP/2+1:end);prmSeq];
+    prmSeq = [prmSeq; prmSeq];
     
     PILOTS_SYMS_IND = [1:11];
 %     DATA_SYMS_IND = [2;3;4;5;7;8;9;10];
@@ -79,24 +87,24 @@ while (1)
     
     numSyms = floor(4096 / (N + CP));
         
-    ul_tx_data_buff_1 = zeros(N, numSyms - 1);
-    ul_tx_data_buff_2 = zeros(N, numSyms - 1);
+    ul_tx_data_buff1 = zeros(N, numSyms - 1);
+    ul_tx_data_buff2 = zeros(N, numSyms - 1);
     
-    ul_tx_data_buff_1(nonZeroSubcarriers, 1:2:11) = 1;
-    ul_tx_data_buff_2(nonZeroSubcarriers, 2:2:11) = 1;
+    ul_tx_data_buff1(nonZeroSubcarriers, 1:2:11) = 1;
+    ul_tx_data_buff2(nonZeroSubcarriers, 2:2:11) = 1;
     
     % OFDM
-    ul_tx_data_buff_1 = circshift(ul_tx_data_buff_1, N/2);
-    ul_tx_data_buff_1 = ifft(ul_tx_data_buff_1, N);
-    ul_tx_data_buff_1 = [ul_tx_data_buff_1(end-CP+1: end, :); ul_tx_data_buff_1];
+    ul_tx_data_buff1 = circshift(ul_tx_data_buff1, N/2);
+    ul_tx_data_buff1 = ifft(ul_tx_data_buff1, N);
+    ul_tx_data_buff1 = [ul_tx_data_buff1(end-CP+1: end, :); ul_tx_data_buff1];
 
-    ul_tx_data_buff_2 = circshift(ul_tx_data_buff_2, N/2);
-    ul_tx_data_buff_2 = ifft(ul_tx_data_buff_2, N);
-    ul_tx_data_buff_2 = [ul_tx_data_buff_2(end-CP+1: end, :); ul_tx_data_buff_2];
+    ul_tx_data_buff2 = circshift(ul_tx_data_buff2, N/2);
+    ul_tx_data_buff2 = ifft(ul_tx_data_buff2, N);
+    ul_tx_data_buff2 = [ul_tx_data_buff2(end-CP+1: end, :); ul_tx_data_buff2];
 
-    ul_tx_data(1, :) = [zeros(1, iris_pre_zeropad); prmSeq(:); ul_tx_data_buff_1(:); zeros(1, iris_post_zeropad)];
-    ul_tx_data(2, :) = [zeros(1, iris_pre_zeropad); prmSeq(:); ul_tx_data_buff_2(:); zeros(1, iris_post_zeropad)];    
-    
+    ul_tx_data(1, :) = [zeros(1, iris_pre_zeropad), reshape(prmSeq, 1, 320), reshape(ul_tx_data_buff1(:), 1, numel(ul_tx_data_buff1)), zeros(1, iris_post_zeropad)];
+    ul_tx_data(2, :) = [zeros(1, iris_pre_zeropad), reshape(prmSeq, 1, 320), reshape(ul_tx_data_buff2(:), 1, numel(ul_tx_data_buff2)), zeros(1, iris_post_zeropad)];    
+
     %% Uplink Channel Estimation - gNB
 
     if (SIM_MOD == 1)
@@ -106,11 +114,74 @@ while (1)
         n = (1/sqrt(2*3.16*N)) * (randn(size(ul_tx_data)) + 1i * randn(size(ul_tx_data)));
         cfo_phase = exp(1i * 2 * pi * (delF) * (0:length(ul_tx_data)-1)' ./ N);
         ul_rx_data = h  * ul_tx_data + n;    
+    else
+        
+        bs_sched = ["BGGGGGRG"];           % BS schedule
+        ue_sched = ["GGGGGGPG"];           % UE schedule        
+        
+        % Iris nodes' parameters
+        bs_sdr_params = struct(...
+            'id', bs_ids, ...
+            'n_sdrs', N_BS_NODE, ...        % number of nodes chained together
+            'txfreq', TX_FRQ, ...   
+            'rxfreq', RX_FRQ, ...
+            'txgain', TX_GN, ...
+            'rxgain', RX_GN, ...
+            'sample_rate', SMPL_RT, ...
+            'n_samp', n_samp, ...          % number of samples per frame time.
+            'n_frame', N_FRM, ...
+            'tdd_sched', bs_sched, ...     % number of zero-paddes samples
+            'n_zpad_samp', iris_pre_zeropad ...
+            );
+
+        ue_sdr_params = bs_sdr_params;
+        ue_sdr_params.id =  ue_ids;
+        ue_sdr_params.n_sdrs = N_UE;
+        ue_sdr_params.txgain = TX_GN_ue;
+
+        ue_sdr_params.tdd_sched = ue_sched;
+        
+        n_samp = bs_sdr_params.n_samp;
+        
+        node_bs = iris_py(bs_sdr_params,[]);        % initialize BS
+        node_ue = iris_py(ue_sdr_params,[]);    % initialize UE
+
+        node_ue.sdr_configgainctrl();
+
+        node_bs.sdrsync();                 % synchronize delays only for BS
+
+        node_ue.sdrrxsetup();             % set up reading stream
+        node_bs.sdrrxsetup();
+
+%         tdd_sched_index = 1; % for uplink only one frame schedule is sufficient
+        node_bs.set_tddconfig(1, bs_sdr_params.tdd_sched); % configure the BS: schedule etc.
+        node_ue.set_tddconfig(0, ue_sdr_params.tdd_sched);
+
+        node_bs.sdr_setupbeacon();   % Burn beacon to the BS(1) RAM
+
+        for i=1:N_BS_NODE
+            node_ue.sdrtx(ul_tx_data); %, numAntsPerBSNode);       % Burn data to the UE RAM
+        end
+        node_bs.sdr_activate_rx();          % activate reading stream
+
+        node_ue.sdr_setcorr()              % activate correlator
+%         node_bs.sdrtrigger(trig);           % set trigger to start the frame 
+        
+       
+        % Iris Rx 
+
+        [ul_rx_data, data0_len] = node_bs.sdrrx(n_samp); % read data
+
+        node_bs.sdr_close();                % close streams and exit gracefully.
+        node_ue.sdr_close();
+        fprintf('Length of the received vector from HW: \tUE:%d\n', data0_len);
+        
+        
     end
     
      % Primary Sync.
     ul_rx_prm_corr = abs(xcorr(ul_rx_data(1, :), prmSeq));
-
+    plot(ul_rx_prm_corr);
     [~, max_idx] = max(ul_rx_prm_corr);
     max_idx = mod(max_idx, length(ul_tx_data)) + 1;
     
@@ -168,7 +239,7 @@ while (1)
     %% SVD based Spatial Multiplexing
     
     [U, S, V] = svd(H_hat_ul);
-    [U1, S1, V1] = svd(h);
+%     [U1, S1, V1] = svd(h);
     
     %% Downlink Baseband Signal Generation - gNB
     
