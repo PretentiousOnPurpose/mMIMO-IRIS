@@ -10,7 +10,7 @@ close all;
 
 [version, executable, isloaded] = pyversion;
 if ~isloaded
-    pyversion /usr/bin/python
+    pyversion /usr/bin/python3
     py.print() %weird bug where py isn't loaded in an external script
 end
 
@@ -224,7 +224,7 @@ while (1)
 %     end
 
     [~, max_idx] = max(rx_prm_corr);
-    plot(rx_prm_corr);
+%     plot(rx_prm_corr);
     max_idx = mod(max_idx, length(tx_data)) + 1;
     
     % CFO Estimation and Equalization
