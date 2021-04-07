@@ -1,3 +1,0 @@
-simParameters = struct();       % Clear simParameters variable to contain all key simulation parameters
-simParameters.NFrames = 2;      % Number of 10 ms frames
-simParameters.SNRIn = [-5 0 5]; % SNR range (dB)

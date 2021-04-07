@@ -161,11 +161,11 @@ while (1)
     ul_ch_est_21 = mean(mean(ul_rx_data_buff_2(nonZeroSubcarriers, 1:2:11), 2));
     ul_ch_est_22 = mean(mean(ul_rx_data_buff_2(nonZeroSubcarriers, 2:2:11), 2));
     
-    H_hat = [[ul_ch_est_11, ul_ch_est_12]; [ul_ch_est_21, ul_ch_est_22]];
+    H_hat_ul = [[ul_ch_est_11, ul_ch_est_12]; [ul_ch_est_21, ul_ch_est_22]];
      
     %% SVD based Spatial Multiplexing
     
-    [U, S, V] = svd(H_hat);
+    [U, S, V] = svd(H_hat_ul);
     [U1, S1, V1] = svd(h);
     
     %% Downlink Baseband Signal Generation - gNB
@@ -200,24 +200,27 @@ while (1)
     
     % Channel coding
 %   
-%     codedBits = zeros((1/codeRate) * numBits, 2);
-%     
-%     for iter_pc = 1: floor(numBits/100)
-%         codedBits_tmp = nrPolarEncode(dataBits((iter_pc - 1) * 100 + 1: iter_pc * 100, 1), (1/codeRate) * 100);
-%         codedBits((iter_pc - 1) * 200 + 1: iter_pc * 200, 1) = nrRateMatchPolar(codedBits_tmp, 100, (1/codeRate)*100);
-%         codedBits_tmp = nrPolarEncode(dataBits((iter_pc - 1) * 100 + 1: iter_pc * 100, 2), (1/codeRate) * 100);
-%         codedBits((iter_pc - 1) * 200 + 1: iter_pc * 200, 2) = nrRateMatchPolar(codedBits_tmp, 100, (1/codeRate)*100);
-%     end
-%     
-%     codedBits_tmp = nrPolarEncode(dataBits(iter_pc * 100 + 1: iter_pc * 100 + 76, 1), (1/codeRate) * 76);
-%     codedBits(iter_pc * 200 + 1: iter_pc * 200 + 152, 1) = nrRateMatchPolar(codedBits_tmp, 76, (1/codeRate)*76);
-%     codedBits_tmp = nrPolarEncode(dataBits(iter_pc * 100 + 1: iter_pc * 100 + 76, 2), (1/codeRate) * 76);
-%     codedBits(iter_pc * 200 + 1: iter_pc * 200 + 152, 2) = nrRateMatchPolar(codedBits_tmp, 76, (1/codeRate)*76);
+    codedBits = zeros((1/codeRate) * numBits, 2);
+    
+    for iter_pc = 1: floor(numBits/100)
+        codedBits_tmp = nrPolarEncode(dataBits((iter_pc - 1) * 100 + 1: iter_pc * 100, 1), (1/codeRate) * 100);
+        codedBits((iter_pc - 1) * 200 + 1: iter_pc * 200, 1) = nrRateMatchPolar(codedBits_tmp, 100, (1/codeRate)*100);
+        codedBits_tmp = nrPolarEncode(dataBits((iter_pc - 1) * 100 + 1: iter_pc * 100, 2), (1/codeRate) * 100);
+        codedBits((iter_pc - 1) * 200 + 1: iter_pc * 200, 2) = nrRateMatchPolar(codedBits_tmp, 100, (1/codeRate)*100);
+    end
+    
+    codedBits_tmp = nrPolarEncode(dataBits(iter_pc * 100 + 1: iter_pc * 100 + 76, 1), (1/codeRate) * 76);
+    codedBits(iter_pc * 200 + 1: iter_pc * 200 + 152, 1) = nrRateMatchPolar(codedBits_tmp, 76, (1/codeRate)*76);
+    codedBits_tmp = nrPolarEncode(dataBits(iter_pc * 100 + 1: iter_pc * 100 + 76, 2), (1/codeRate) * 76);
+    codedBits(iter_pc * 200 + 1: iter_pc * 200 + 152, 2) = nrRateMatchPolar(codedBits_tmp, 76, (1/codeRate)*76);
         
-    codedBits = [dataBits; dataBits];
+%     codedBits = [dataBits; dataBits];
     % QAM
     
     modData = qammod(codedBits, modOrder, 'gray', 'InputType', 'bit', 'UnitAveragePower', 1);
+
+    % SVD based SM Transmit Precoding
+    modData = V * conj(modData');
     
     % Framing
         
@@ -228,15 +231,18 @@ while (1)
     iter_pilot_syms = 1;
     for iter_syms = 1: (numSyms - 1)
         if (any(DATA_SYMS_IND == iter_syms))        
-            dl_tx_data_buff1(nonZeroSubcarriers, iter_syms) = modData((iter_data_syms - 1) * numDataCarriers + 1: iter_data_syms * numDataCarriers, 1);
-            dl_tx_data_buff2(nonZeroSubcarriers, iter_syms) = modData((iter_data_syms - 1) * numDataCarriers + 1: iter_data_syms * numDataCarriers, 2);
+            dl_tx_data_buff1(nonZeroSubcarriers, iter_syms) = modData(1, (iter_data_syms - 1) * numDataCarriers + 1: iter_data_syms * numDataCarriers);
+            dl_tx_data_buff2(nonZeroSubcarriers, iter_syms) = modData(2, (iter_data_syms - 1) * numDataCarriers + 1: iter_data_syms * numDataCarriers);
             iter_data_syms = iter_data_syms + 1;
         else
-            dl_tx_data_buff1(nonZeroSubcarriers, iter_syms) = 1;
-            dl_tx_data_buff2(nonZeroSubcarriers, iter_syms) = 1;
-            iter_pilot_syms = iter_pilot_syms + 1;
+%             dl_tx_data_buff1(nonZeroSubcarriers, iter_syms) = 1;
+%             dl_tx_data_buff2(nonZeroSubcarriers, iter_syms) = 1;
+%             iter_pilot_syms = iter_pilot_syms + 1;
         end            
     end
+    
+    dl_tx_data_buff1(nonZeroSubcarriers, PILOTS_SYMS_IND([1, 3])) = 1;
+    dl_tx_data_buff2(nonZeroSubcarriers, PILOTS_SYMS_IND([2])) = 1;
     
     % OFDM
 %     t1 = dl_tx_data_buff;
@@ -251,12 +257,6 @@ while (1)
 
     dl_tx_data(1, :) = [zeros(1, iris_pre_zeropad), reshape(prmSeq, 1, 320), reshape(dl_tx_data_buff1(:), 1, numel(dl_tx_data_buff1)), zeros(1, iris_post_zeropad)];
     dl_tx_data(2, :) = [zeros(1, iris_pre_zeropad), reshape(prmSeq, 1, 320), reshape(dl_tx_data_buff2(:), 1, numel(dl_tx_data_buff1)), zeros(1, iris_post_zeropad)];
-
-%     dl_tx_data(1, :) = [zeros(1, iris_pre_zeropad), reshape(prmSeq, 1, 320), 2 * ones(1, numel(dl_tx_data_buff1)), zeros(1, iris_post_zeropad)];
-%     dl_tx_data(2, :) = [zeros(1, iris_pre_zeropad), reshape(prmSeq, 1, 320), ones(1, numel(dl_tx_data_buff1)), zeros(1, iris_post_zeropad)];
-    
-    % SVD based SM Transmit Precoding
-    dl_tx_data = V * dl_tx_data;
     
     %% Downlink Baseband Signal Processing at IRIS UE Nodes
 
@@ -267,8 +267,6 @@ while (1)
         cfo_phase = exp(1i * 2 * pi * (delF) * (0:length(dl_tx_data)-1)' ./ N);
         dl_rx_data = h * dl_tx_data + n;    
     end
-    
-    dl_rx_data = -U' * dl_rx_data;
     
     % Primary Sync.
     dl_rx_prm_corr = abs(xcorr(dl_rx_data(1, :), prmSeq));
@@ -287,7 +285,6 @@ while (1)
     % Realign with Frame Boundary
 %     
     dl_rx_data = dl_rx_data(:, max_idx + length(prmSeq): end);    
-%     dl_rx_data = U' * dl_rx_data;
     dl_rx_data_buff1 = zeros(N, numSyms - 1);
     dl_rx_data_buff2 = zeros(N, numSyms - 1);
     
@@ -307,45 +304,49 @@ while (1)
     dl_rx_data_buff2 = circshift(dl_rx_data_buff2, N/2);
     
     % Channel Estimation and Equalization
-    dl_ch_sig_1 = mean(mean(dl_rx_data_buff1(nonZeroSubcarriers, PILOTS_SYMS_IND), 2));
-    dl_ch_sig_2 = mean(mean(dl_rx_data_buff2(nonZeroSubcarriers, PILOTS_SYMS_IND), 2));    
     
-    dl_rx_data_buff1 = (conj(dl_ch_sig_1) / (abs(dl_ch_sig_1) ^ 2)) .* dl_rx_data_buff1;
-    dl_rx_data_buff2 = (conj(dl_ch_sig_2) / (abs(dl_ch_sig_2) ^ 2)) .* dl_rx_data_buff2;
+    dl_ch_est_11 = mean(mean(dl_rx_data_buff1(nonZeroSubcarriers, PILOTS_SYMS_IND([1, 3])), 2));
+    dl_ch_est_12 = mean(mean(dl_rx_data_buff1(nonZeroSubcarriers, PILOTS_SYMS_IND([2])), 2));
+    dl_ch_est_21 = mean(mean(dl_rx_data_buff2(nonZeroSubcarriers, PILOTS_SYMS_IND([1, 3])), 2));
+    dl_ch_est_22 = mean(mean(dl_rx_data_buff2(nonZeroSubcarriers, PILOTS_SYMS_IND([2])), 2));
     
+    H_hat_dl = [[dl_ch_est_11, dl_ch_est_12]; [dl_ch_est_21, dl_ch_est_22]];
+    [U2, S2, V2] = svd(H_hat_dl);
     % Equalized Data Extraction
     
     data_syms_buff1 = dl_rx_data_buff1(nonZeroSubcarriers, DATA_SYMS_IND);
     data_syms_buff2 = dl_rx_data_buff2(nonZeroSubcarriers, DATA_SYMS_IND);
     
-    data_syms(:, 1) = data_syms_buff1(:);
-    data_syms(:, 2) = data_syms_buff2(:);
+    data_syms(1, :) = data_syms_buff1(:);
+    data_syms(2, :) = data_syms_buff2(:);
+    
+    data_syms = U2' * data_syms;
     
     % QAM Demodulation
     
-    demodData = qamdemod(data_syms, modOrder, 'gray', 'OutputType', 'bit', 'UnitAveragePower', 1);
-    decodedBits = demodData;
+    demodData = qamdemod(conj(data_syms'), modOrder, 'gray', 'OutputType', 'approxllr', 'UnitAveragePower', 1);
+%     decodedBits = demodData;
     % Channel Decoding
     
-%     decodedBits = zeros(numBits, 2);
-%     
-%     for iter_pc = 1: floor(numBits/100)
-%         decodedBits_tmp = nrRateRecoverPolar(demodData((iter_pc - 1) * 200 + 1: iter_pc * 200, 1), 100, 256);
-%         decodedBits((iter_pc - 1) * 100 + 1: iter_pc * 100, 1) = nrPolarDecode(decodedBits_tmp, 100, (1/codeRate)*100, 8);
-% 
-%         decodedBits_tmp = nrRateRecoverPolar(demodData((iter_pc - 1) * 200 + 1: iter_pc * 200, 2), 100, 256);
-%         decodedBits((iter_pc - 1) * 100 + 1: iter_pc * 100, 2) = nrPolarDecode(decodedBits_tmp, 100, (1/codeRate)*100, 8);
-%     end
-%     
-%     decodedBits_tmp = nrRateRecoverPolar(demodData(iter_pc * 200 + 1: iter_pc * 200 + 152, 1), 76, 256);
-%     decodedBits(iter_pc * 100 + 1: iter_pc * 100 + 76, 1) = nrPolarDecode(decodedBits_tmp, 76, (1/codeRate)*76, 8);
-%         
-%     decodedBits_tmp = nrRateRecoverPolar(demodData(iter_pc * 200 + 1: iter_pc * 200 + 152, 2), 76, 256);
-%     decodedBits(iter_pc * 100 + 1: iter_pc * 100 + 76, 2) = nrPolarDecode(decodedBits_tmp, 76, (1/codeRate)*76, 8);
+    decodedBits = zeros(numBits, 2);
+    
+    for iter_pc = 1: floor(numBits/100)
+        decodedBits_tmp = nrRateRecoverPolar(demodData((iter_pc - 1) * 200 + 1: iter_pc * 200, 1), 100, 256);
+        decodedBits((iter_pc - 1) * 100 + 1: iter_pc * 100, 1) = nrPolarDecode(decodedBits_tmp, 100, (1/codeRate)*100, 8);
+
+        decodedBits_tmp = nrRateRecoverPolar(demodData((iter_pc - 1) * 200 + 1: iter_pc * 200, 2), 100, 256);
+        decodedBits((iter_pc - 1) * 100 + 1: iter_pc * 100, 2) = nrPolarDecode(decodedBits_tmp, 100, (1/codeRate)*100, 8);
+    end
+    
+    decodedBits_tmp = nrRateRecoverPolar(demodData(iter_pc * 200 + 1: iter_pc * 200 + 152, 1), 76, 256);
+    decodedBits(iter_pc * 100 + 1: iter_pc * 100 + 76, 1) = nrPolarDecode(decodedBits_tmp, 76, (1/codeRate)*76, 8);
+        
+    decodedBits_tmp = nrRateRecoverPolar(demodData(iter_pc * 200 + 1: iter_pc * 200 + 152, 2), 76, 256);
+    decodedBits(iter_pc * 100 + 1: iter_pc * 100 + 76, 2) = nrPolarDecode(decodedBits_tmp, 76, (1/codeRate)*76, 8);
     
     %% Evaluation 
 %     fprintf("%u %u\n", sum(bitxor(dataBits(:, 1), decodedBits(:, 1))), sum(bitxor(dataBits(:, 2), decodedBits(:, 2))));
-    if (sum(bitxor([dataBits; dataBits], decodedBits)) == 0)
+    if (sum(bitxor(dataBits, decodedBits)) == 0)
         fprintf("Successful Transmission\n");
     else
         fprintf("Failed Reception\n");

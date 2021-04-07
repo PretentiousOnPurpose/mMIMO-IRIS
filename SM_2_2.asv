@@ -99,6 +99,7 @@ while (1)
 
     if (SIM_MOD == 1)
         delF = 0.0;
+%         h = [[1,0];[0,1]];
         h = (1/sqrt(2)) * (randn(2, 2) + 1i * randn(2, 2));
         n = 0 * (1/sqrt(2*1*N)) * (randn(size(ul_tx_data)) + 1i * randn(size(ul_tx_data)));
         cfo_phase = exp(1i * 2 * pi * (delF) * (0:length(ul_tx_data)-1)' ./ N);
@@ -213,6 +214,7 @@ while (1)
     codedBits_tmp = nrPolarEncode(dataBits(iter_pc * 100 + 1: iter_pc * 100 + 76, 2), (1/codeRate) * 76);
     codedBits(iter_pc * 200 + 1: iter_pc * 200 + 152, 2) = nrRateMatchPolar(codedBits_tmp, 76, (1/codeRate)*76);
         
+%     codedBits = [dataBits; dataBits];
     % QAM
     
     modData = qammod(codedBits, modOrder, 'gray', 'InputType', 'bit', 'UnitAveragePower', 1);
@@ -266,7 +268,7 @@ while (1)
         dl_rx_data = h * dl_tx_data + n;    
     end
     
-    dl_rx_data = U' * dl_rx_data;
+    
     
     % Primary Sync.
     dl_rx_prm_corr = abs(xcorr(dl_rx_data(1, :), prmSeq));
@@ -305,8 +307,8 @@ while (1)
     dl_rx_data_buff2 = circshift(dl_rx_data_buff2, N/2);
     
     % Channel Estimation and Equalization
-    dl_ch_sig_1 = mean(mean(ul_rx_data_buff_1(nonZeroSubcarriers, PILOTS_SYMS_IND), 2));
-    dl_ch_sig_2 = mean(mean(ul_rx_data_buff_2(nonZeroSubcarriers, PILOTS_SYMS_IND), 2));    
+    dl_ch_sig_1 = mean(mean(dl_rx_data_buff1(nonZeroSubcarriers, PILOTS_SYMS_IND), 2));
+    dl_ch_sig_2 = mean(mean(dl_rx_data_buff2(nonZeroSubcarriers, PILOTS_SYMS_IND), 2));    
     
     dl_rx_data_buff1 = (conj(dl_ch_sig_1) / (abs(dl_ch_sig_1) ^ 2)) .* dl_rx_data_buff1;
     dl_rx_data_buff2 = (conj(dl_ch_sig_2) / (abs(dl_ch_sig_2) ^ 2)) .* dl_rx_data_buff2;
@@ -319,10 +321,12 @@ while (1)
     data_syms(:, 1) = data_syms_buff1(:);
     data_syms(:, 2) = data_syms_buff2(:);
     
+    dl_rx_data = U' * dl_rx_data;
+    
     % QAM Demodulation
     
-    demodData = qamdemod(data_syms, modOrder, 'gray', 'OutputType', 'bit', 'UnitAveragePower', 1);
-
+    demodData = qamdemod(data_syms, modOrder, 'gray', 'OutputType', 'approxllr', 'UnitAveragePower', 1);
+%     decodedBits = demodData;
     % Channel Decoding
     
     decodedBits = zeros(numBits, 2);
@@ -342,7 +346,7 @@ while (1)
     decodedBits(iter_pc * 100 + 1: iter_pc * 100 + 76, 2) = nrPolarDecode(decodedBits_tmp, 76, (1/codeRate)*76, 8);
     
     %% Evaluation 
-    fprintf("%u %u\n", sum(bitxor(dataBits(:, 1), decodedBits(:, 1))), sum(bitxor(dataBits(:, 2), decodedBits(:, 2))));
+%     fprintf("%u %u\n", sum(bitxor(dataBits(:, 1), decodedBits(:, 1))), sum(bitxor(dataBits(:, 2), decodedBits(:, 2))));
     if (sum(bitxor(dataBits, decodedBits)) == 0)
         fprintf("Successful Transmission\n");
     else
