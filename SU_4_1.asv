@@ -1,6 +1,8 @@
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Author(s): Yashwanth R - yashwanthr@iisc.ac.in   %
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Author(s): Yashwanth R - yashwanthr@iisc.ac.in         %
+% Title    : 4x1 MISO Transmit Beamforming (Closed Loop) %
+% Date     : 29-04-2021                                  %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 clc;
 clear;
 close all;
@@ -17,7 +19,10 @@ close all;
 % end
 
 % Params:
-SIM_MOD                 = 1;
+SIM_MOD = 1;
+
+SNRdB = 10;
+SNR = 10 ^ (SNRdB / 10);
 
 keepTXRX_Running = 1;
 iter = 1;
@@ -102,7 +107,7 @@ while (1)
     if (SIM_MOD == 1)
         h = (1/sqrt(2)) * (randn(4, 1) + 1i * randn(4, 1));        
         ul_rx_data = h * ul_tx_data;
-        noise = (1/sqrt(2 * 10 * N)) * (randn(size(ul_rx_data)) + 1i * randn(size(ul_rx_data)));    
+        noise = (1/sqrt(2 * SNR * N)) * (randn(size(ul_rx_data)) + 1i * randn(size(ul_rx_data)));    
         ul_rx_data = ul_rx_data + noise;
     else
         bs_sched = ["BGGGGGRG"];           % BS schedule
@@ -197,11 +202,11 @@ while (1)
     h_hat = zeros(4, 1);
     
     for iter_ant = 1:4
-        ul_rx_data_buff = squuze(fft(ul_rx_data_buff(iter_ant, : ,:), N), N, (numSyms - 1));
-        ul_rx_data_buff = circshift(ul_rx_data_buff, N/2);
+        ul_rx_data_buff1 = squeeze(fft(ul_rx_data_buff(iter_ant, : ,:), N));
+        ul_rx_data_buff1 = circshift(ul_rx_data_buff1, N/2);
 
         % Channel Estimation and Equalization
-        h_hat(iter_ant, 1) = mean(mean(ul_rx_data_buff(:, PILOTS_SYMS_IND)));    
+        h_hat(iter_ant, 1) = mean(mean(ul_rx_data_buff1(:, PILOTS_SYMS_IND)));    
     end
     %% Downlink Baseband Signal Generation - gNB
    
@@ -215,7 +220,7 @@ while (1)
     prmSeq = [zadoffChuSeq(5, (N+CP)/2-1); 0];
    
     codeRate = 1/2;
-    modOrder = 4;
+    modOrder = 2;
    
     PILOTS_SYMS_IND = [1;9];
     DATA_SYMS_IND = [2,3,4,5,6,7,8];
@@ -224,7 +229,7 @@ while (1)
     nonZeroSubcarriers = setdiff(1:N, zeroSubcarriers);
     numDataCarriers = length(nonZeroSubcarriers);
    
-    numBits = (1/codeRate) * (1/log2(modOrder)) * length(DATA_SYMS_IND) * length(nonZeroSubcarriers);    
+    numBits = floor((codeRate) * (log2(modOrder)) * length(DATA_SYMS_IND) * length(nonZeroSubcarriers));    
     numSyms = length(union(PILOTS_SYMS_IND, DATA_SYMS_IND)) + 1;
 
     % Data Generation
@@ -235,12 +240,16 @@ while (1)
     codedBits = zeros((1/codeRate) * numBits, 1);
    
     bitGroup = 64;
-   
+    lastBits = numBits - (floor(numBits/bitGroup) * bitGroup);
     for iter_pc = 1: floor(numBits/bitGroup)
         codedBits_tmp = nrPolarEncode(dataBits((iter_pc - 1) * bitGroup + 1: iter_pc * bitGroup, 1), (1/codeRate) * bitGroup);
         codedBits((iter_pc - 1) * 2 * bitGroup + 1: iter_pc * 2 * bitGroup, 1) = nrRateMatchPolar(codedBits_tmp, bitGroup, (1/codeRate)*bitGroup);
     end
-
+    
+    if (lastBits ~= 0)
+        codedBits_tmp = nrPolarEncode(dataBits(iter_pc * bitGroup + 1: iter_pc * bitGroup + lastBits, 1), (1/codeRate) * lastBits);
+        codedBits(iter_pc * 2 * bitGroup + 1: iter_pc * 2 * bitGroup + 2 * lastBits, 1) = nrRateMatchPolar(codedBits_tmp, bitGroup, (1/codeRate)*lastBits);
+    end
     % QAM    
     modData = qammod(codedBits, modOrder, 'gray', 'InputType', 'bit', 'UnitAveragePower', 1);
     modData = modData.';
@@ -265,22 +274,20 @@ while (1)
     dl_tx_data_buff = ifft(dl_tx_data_buff, N);
     dl_tx_data_buff = [dl_tx_data_buff(end-CP+1: end, :); dl_tx_data_buff];
    
-
-    dl_tx_data(1, :) = [zeros(1, iris_pre_zeropad), reshape(prmSeq, 1, 160), reshape(dl_tx_data_buff(:), 1, numel(dl_tx_data_buff)), 0.25 .* reshape(prmSeq, 1, 160), zeros(1, iris_post_zeropad)];
-    dl_tx_data(2, :) = [zeros(1, iris_pre_zeropad), reshape(prmSeq, 1, 160), reshape(dl_tx_data_buff(:), 1, numel(dl_tx_data_buff)), 0.25 .* reshape(prmSeq, 1, 160), zeros(1, iris_post_zeropad)];
-    dl_tx_data(3, :) = [zeros(1, iris_pre_zeropad), reshape(prmSeq, 1, 160), reshape(dl_tx_data_buff(:), 1, numel(dl_tx_data_buff)), 0.25 .* reshape(prmSeq, 1, 160), zeros(1, iris_post_zeropad)];
-    dl_tx_data(4, :) = [zeros(1, iris_pre_zeropad), reshape(prmSeq, 1, 160), reshape(dl_tx_data_buff(:), 1, numel(dl_tx_data_buff)), 0.25 .* reshape(prmSeq, 1, 160), zeros(1, iris_post_zeropad)];
-
-    dl_tx_data = (dl_tx_data) ./ 2;
+    for iter_ant = 1:4
+        dl_tx_data(iter_ant, :) = (conj(h_hat(iter_ant, 1)) / (abs(h_hat(iter_ant, 1)) ^ 2)) .* ;
+    end
+    
+    dl_tx_data = (dl_tx_data) ./ 4;
     
     n_samp = length(dl_tx_data);
 
     %% Downlink Baseband Signal Processing at IRIS UE Nodes
 
     if (SIM_MOD == 1)
-        h = (1/sqrt(2)) * (randn(1, 4) + 1i * randn(1, 4));        
-        dl_rx_data = h * dl_tx_data;
-        noise = (1/sqrt(2 * 10 * N)) * (randn(size(dl_rx_data)) + 1i * randn(size(dl_rx_data)));    
+%         h = (1/sqrt(2)) * (randn(1, 4) + 1i * randn(1, 4));        
+        dl_rx_data = h.' * dl_tx_data;
+        noise = (1/sqrt(2 * SNR * N)) * (randn(size(dl_rx_data)) + 1i * randn(size(dl_rx_data)));    
         dl_rx_data = dl_rx_data + noise;
     else
         bs_sched = ["BGGGGGRG"];           % BS schedule
@@ -349,7 +356,7 @@ while (1)
     % Primary Sync.
     dl_rx_prm_corr = abs(xcorr(dl_rx_data, prmSeq));
 %     figure;
-%     plot(dl_rx_prm_corr);
+    plot(dl_rx_prm_corr);
     [max_corr, max_idx] = max(dl_rx_prm_corr);
     max_idx = mod(max_idx, (length(dl_tx_data))) + 1;
 
@@ -386,7 +393,7 @@ while (1)
     data_syms(:, 1) = data_syms_buff(:);
    
     % QAM Demodulation   
-    demodData = qamdemod(data_syms, modOrder, 'gray', 'OutputType', 'approxllr', 'UnitAveragePower', 1);
+    demodData = qamdemod(data_syms, modOrder, 'gray', 'OutputType', 'bit', 'UnitAveragePower', 1);
 
     decodedBits = zeros(numBits, 1);
    
@@ -394,7 +401,10 @@ while (1)
         decodedBits_tmp = nrRateRecoverPolar(demodData((iter_pc - 1) * 2 * bitGroup + 1: iter_pc * 2 * bitGroup, 1), bitGroup, 128);
         decodedBits((iter_pc - 1) * bitGroup + 1: iter_pc * bitGroup, 1) = nrPolarDecode(decodedBits_tmp, bitGroup, (1/codeRate)*bitGroup, 8);
     end
-    
+    if (lastBits ~= 0)
+        decodedBits_tmp = nrRateRecoverPolar(demodData(iter_pc * 2 * bitGroup + 1: iter_pc * 2 * bitGroup + 2 * lastBits, 1), lastBits, 128);
+        decodedBits(iter_pc * bitGroup + 1: iter_pc * bitGroup + lastBits, 1) = nrPolarDecode(decodedBits_tmp, bitGroup, (1/codeRate)*lastBits, 8);
+    end
     %% Evaluation
 %     fprintf("%u %u\n", sum(bitxor(dataBits(:, 1), decodedBits(:, 1))), sum(bitxor(dataBits(:, 2), decodedBits(:, 2))));
     if (sum(bitxor(dataBits(:), decodedBits(:))) == 0)

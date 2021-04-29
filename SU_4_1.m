@@ -21,7 +21,7 @@ close all;
 % Params:
 SIM_MOD = 1;
 
-SNRdB = 100000000000;
+SNRdB = 10;
 SNR = 10 ^ (SNRdB / 10);
 
 keepTXRX_Running = 1;
@@ -106,7 +106,6 @@ while (1)
 
     if (SIM_MOD == 1)
         h = (1/sqrt(2)) * (randn(4, 1) + 1i * randn(4, 1));        
-        h = h ./ h;
         ul_rx_data = h * ul_tx_data;
         noise = (1/sqrt(2 * SNR * N)) * (randn(size(ul_rx_data)) + 1i * randn(size(ul_rx_data)));    
         ul_rx_data = ul_rx_data + noise;
@@ -212,7 +211,7 @@ while (1)
     %% Downlink Baseband Signal Generation - gNB
    
     % System Parameters
-    iris_pre_zeropad = 250;
+    iris_pre_zeropad = 0;
     iris_post_zeropad = 250;
    
     N = 256;
@@ -221,7 +220,7 @@ while (1)
     prmSeq = [zadoffChuSeq(5, (N+CP)/2-1); 0];
    
     codeRate = 1/2;
-    modOrder = 2;
+    modOrder = 4;
    
     PILOTS_SYMS_IND = [1;9];
     DATA_SYMS_IND = [2,3,4,5,6,7,8];
@@ -275,13 +274,13 @@ while (1)
     dl_tx_data_buff = ifft(dl_tx_data_buff, N);
     dl_tx_data_buff = [dl_tx_data_buff(end-CP+1: end, :); dl_tx_data_buff];
    
-
-    dl_tx_data(1, :) = h_hat(1, 1) .* [zeros(1, iris_pre_zeropad), reshape(prmSeq, 1, 160), reshape(dl_tx_data_buff(:), 1, numel(dl_tx_data_buff)), 0.25 .* reshape(prmSeq, 1, 160), zeros(1, iris_post_zeropad)];
-    dl_tx_data(2, :) = h_hat(2, 1) .* [zeros(1, iris_pre_zeropad), reshape(prmSeq, 1, 160), reshape(dl_tx_data_buff(:), 1, numel(dl_tx_data_buff)), 0.25 .* reshape(prmSeq, 1, 160), zeros(1, iris_post_zeropad)];
-    dl_tx_data(3, :) = h_hat(3, 1) .* [zeros(1, iris_pre_zeropad), reshape(prmSeq, 1, 160), reshape(dl_tx_data_buff(:), 1, numel(dl_tx_data_buff)), 0.25 .* reshape(prmSeq, 1, 160), zeros(1, iris_post_zeropad)];
-    dl_tx_data(4, :) = h_hat(4, 1) .* [zeros(1, iris_pre_zeropad), reshape(prmSeq, 1, 160), reshape(dl_tx_data_buff(:), 1, numel(dl_tx_data_buff)), 0.25 .* reshape(prmSeq, 1, 160), zeros(1, iris_post_zeropad)];
-
-    dl_tx_data = (dl_tx_data) ./ 2;
+    dl_tx_data_buff = [zeros(1, iris_pre_zeropad), reshape(prmSeq, 1, 160), reshape(dl_tx_data_buff(:), 1, numel(dl_tx_data_buff)), 0.25 .* reshape(prmSeq, 1, 160), zeros(1, iris_post_zeropad)];
+    
+    for iter_ant = 1:4
+        dl_tx_data(iter_ant, :) = (conj(h_hat(iter_ant, 1)) / (abs(h_hat(iter_ant, 1)) ^ 2)) .* dl_tx_data_buff;
+    end
+    
+    dl_tx_data = (dl_tx_data) ./ 4;
     
     n_samp = length(dl_tx_data);
 
@@ -396,7 +395,7 @@ while (1)
     data_syms(:, 1) = data_syms_buff(:);
    
     % QAM Demodulation   
-    demodData = qamdemod(data_syms, modOrder, 'gray', 'OutputType', 'bit', 'UnitAveragePower', 1);
+    demodData = qamdemod(data_syms, modOrder, 'gray', 'OutputType', 'approxllr', 'UnitAveragePower', 1);
 
     decodedBits = zeros(numBits, 1);
    
