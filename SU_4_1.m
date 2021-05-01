@@ -211,8 +211,8 @@ while (1)
     %% Downlink Baseband Signal Generation - gNB
    
     % System Parameters
-    iris_pre_zeropad = 0;
-    iris_post_zeropad = 250;
+    iris_pre_zeropad = 200 * (1 - SIM_MOD);
+    iris_post_zeropad = 200 * (1 - SIM_MOD);
    
     N = 256;
     CP = N/4;
@@ -220,7 +220,7 @@ while (1)
     prmSeq = [zadoffChuSeq(5, (N+CP)/2-1); 0];
    
     codeRate = 1/2;
-    modOrder = 4;
+    modOrder = 16;
    
     PILOTS_SYMS_IND = [1;9];
     DATA_SYMS_IND = [2,3,4,5,6,7,8];
@@ -277,17 +277,14 @@ while (1)
     dl_tx_data_buff = [zeros(1, iris_pre_zeropad), reshape(prmSeq, 1, 160), reshape(dl_tx_data_buff(:), 1, numel(dl_tx_data_buff)), 0.25 .* reshape(prmSeq, 1, 160), zeros(1, iris_post_zeropad)];
     
     for iter_ant = 1:4
-        dl_tx_data(iter_ant, :) = (conj(h_hat(iter_ant, 1)) / (abs(h_hat(iter_ant, 1)) ^ 2)) .* dl_tx_data_buff;
+        dl_tx_data(iter_ant, :) = (conj(h_hat(iter_ant, 1)) / sqrt(sum(abs(h_hat) .^ 2))) .* dl_tx_data_buff;
     end
-    
-    dl_tx_data = (dl_tx_data) ./ 4;
     
     n_samp = length(dl_tx_data);
 
     %% Downlink Baseband Signal Processing at IRIS UE Nodes
 
     if (SIM_MOD == 1)
-%         h = (1/sqrt(2)) * (randn(1, 4) + 1i * randn(1, 4));        
         dl_rx_data = h.' * dl_tx_data;
         noise = (1/sqrt(2 * SNR * N)) * (randn(size(dl_rx_data)) + 1i * randn(size(dl_rx_data)));    
         dl_rx_data = dl_rx_data + noise;
